@@ -1,7 +1,7 @@
 {
   "hotkey": "ctrl+shift+alt+a",
   "gemini": {
-    "api_key": "AIzaSyBB1ai98jl5rIWuYlby41eSuoJ4NYBaEkc",
+    "api_key": "your_api_key",
     "model": "gemini-3-flash-preview",
     "system_prompt": "You are a helpful assistant. Analyze this screenshot and provide a concise solution. Be direct and actionable. Just print the direct answer, no comments"
   },
