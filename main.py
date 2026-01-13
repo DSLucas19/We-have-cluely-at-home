@@ -49,10 +49,9 @@ class AIAssistant:
         save_screenshots = self.config.get('screenshot.save_to_disk', False)
         self.screenshot = ScreenshotCapture(save_to_disk=save_screenshots)
         
-        # Initialize Gemini
-        api_key = self.config.get_api_key()
+        # Initialize Gemini with config manager for key rotation
         model = self.config.get('gemini.model', 'gemini-3-flash-preview')
-        self.gemini = GeminiIntegration(api_key, model)
+        self.gemini = GeminiIntegration(self.config, model)
         
         # Initialize auto-paste
         paste_delay = self.config.get_paste_delay()

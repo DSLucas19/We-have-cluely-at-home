@@ -1,12 +1,12 @@
-"""Settings window for configuring AI Assistant."""
+"""Settings window for configuring AI Assistant with multi-API key support."""
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, scrolledtext
 from typing import Callable, Optional
 from logger import logger
 
 
-class SettingsWindow:
-    """GUI window for application settings."""
+class Settings Window:
+    """GUI window for application settings including multiple API keys."""
     
     def __init__(
         self,
@@ -42,7 +42,7 @@ class SettingsWindow:
         """Create and configure the settings window."""
         self.window = tk.Tk()
         self.window.title("AI Assistant Settings")
-        self.window.geometry("500x600")
+        self.window.geometry("550x700")
         self.window.resizable(False, False)
         
         # Create main frame with padding
@@ -83,24 +83,74 @@ class SettingsWindow:
         )
         row += 1
         
-        ttk.Label(main_frame, text="API Key:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        # API Keys List
+        ttk.Label(main_frame, text="API Keys:", font=('', 9)).grid(
+            row=row, column=0, sticky=tk.NW, pady=5
+        )
         
-        api_frame = ttk.Frame(main_frame)
-        api_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
+        keys_frame = ttk.Frame(main_frame)
+        keys_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
         
-        self.api_key_var = tk.StringVar(value=self.config.get_api_key())
-        self.api_entry = ttk.Entry(api_frame, textvariable=self.api_key_var, show="•", width=30)
-        self.api_entry.pack(side=tk.LEFT, padx=(0, 5))
+        # Listbox for API keys
+        self.keys_listbox = tk.Listbox(keys_frame, height=4, width=40)
+        self.keys_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        ttk.Button(api_frame, text="Test", command=self._test_api).pack(side=tk.LEFT)
+        # Load existing keys
+        for key in self.config.get_all_api_keys():
+            masked_key = key[:10] + "..." + key[-4:] if len(key) > 14 else key
+            self.keys_listbox.insert(tk.END, masked_key)
+            self.keys_listbox.itemconfig(tk.END, {'fg': 'gray'})
+        
+        # Scrollbar for listbox
+        scrollbar = ttk.Scrollbar(keys_frame, orient=tk.VERTICAL, command=self.keys_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.keys_listbox.config(yscrollcommand=scrollbar.set)
         
         row += 1
         
-        # System Prompt
-        ttk.Label(main_frame, text="System Prompt:").grid(row=row, column=0, sticky=tk.NW, pady=5)
+        # Buttons for key management
+        key_buttons_frame = ttk.Frame(main_frame)
+        key_buttons_frame.grid(row=row, column=1, sticky=tk.W, pady=5)
         
-        self.prompt_text = tk.Text(main_frame, height=4, width=40, wrap=tk.WORD)
-        self.prompt_text.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
+        ttk.Button(key_buttons_frame, text="Add Key", command=self._add_key).pack(side=tk.LEFT, padx=2)
+        ttk.Button(key_buttons_frame, text="Remove", command=self._remove_key).pack(side=tk.LEFT, padx=2)
+        ttk.Button(key_buttons_frame, text="Test", command=self._test_api).pack(side=tk.LEFT, padx=2)
+        
+        row += 1
+        
+        # Auto-rotation checkbox
+        self.auto_rotate_var = tk.BooleanVar(value=self.config.is_auto_rotate_enabled())
+        ttk.Checkbutton(
+            main_frame,
+            text="Auto-rotate keys on quota error",
+            variable=self.auto_rotate_var
+        ).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # Current key indicator
+        current_index = self.config.get('gemini.current_key_index', 0)
+        ttk.Label(
+            main_frame,
+            text=f"Current active key: #{current_index + 1}",
+            font=('', 8),
+            foreground='blue'
+        ).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=2)
+        row += 1
+        
+        # Separator
+        ttk.Separator(main_frame, orient='horizontal').grid(
+            row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=15
+        )
+        row += 1
+        
+        # System Prompt
+        ttk.Label(main_frame, text="System Prompt:", font=('', 10, 'bold')).grid(
+            row=row, column=0, sticky=tk.NW, pady=5
+        )
+        row += 1
+        
+        self.prompt_text = scrolledtext.ScrolledText(main_frame, height=4, width=50, wrap=tk.WORD)
+        self.prompt_text.grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         self.prompt_text.insert('1.0', self.config.get_system_prompt())
         
         row += 1
@@ -178,6 +228,66 @@ class SettingsWindow:
         
         logger.info("Settings window opened")
     
+    def _add_key(self) -> None:
+        """Add a new API key."""
+        dialog = tk.Toplevel(self.window)
+        dialog.title("Add API Key")
+        dialog.geometry("400x150")
+        dialog.resizable(False, False)
+        
+        ttk.Label(dialog, text="Enter your Gemini API key:").pack(pady=10)
+        
+        key_entry = ttk.Entry(dialog, show="•", width=50)
+        key_entry.pack(pady=5)
+        key_entry.focus()
+        
+        def save_key():
+            api_key = key_entry.get().strip()
+            if not api_key:
+                messagebox.showwarning("Empty Key", "Please enter an API key.")
+                return
+            
+            # Check for duplicates
+            if api_key in self.config.get_all_api_keys():
+                messagebox.showinfo("Duplicate", "This API key already exists.")
+                dialog.destroy()
+                return
+            
+            # Add to listbox
+            masked_key = api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else api_key
+            self.keys_listbox.insert(tk.END, masked_key)
+            
+            # Store the full key temporarily (will be saved when settings are saved)
+            if not hasattr(self, 'temp_keys'):
+                self.temp_keys = list(self.config.get_all_api_keys())
+            self.temp_keys.append(api_key)
+            
+            messagebox.showinfo("Success", "API key added! Don't forget to click 'Save' to apply changes.")
+            dialog.destroy()
+        
+        ttk.Button(dialog, text="Add", command=save_key).pack(pady=10)
+        
+        # Bind Enter key
+        key_entry.bind('<Return>', lambda e: save_key())
+    
+    def _remove_key(self) -> None:
+        """Remove selected API key."""
+        selection = self.keys_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select an API key to remove.")
+            return
+        
+        index = selection[0]
+        
+        if messagebox.askyesno("Confirm", "Remove this API key?"):
+            self.keys_listbox.delete(index)
+            
+            # Remove from temp storage
+            if not hasattr(self, 'temp_keys'):
+                self.temp_keys = list(self.config.get_all_api_keys())
+            if index < len(self.temp_keys):
+                self.temp_keys.pop(index)
+    
     def _record_hotkey(self) -> None:
         """Record hotkey from keyboard input."""
         messagebox.showinfo(
@@ -188,12 +298,25 @@ class SettingsWindow:
         )
     
     def _test_api(self) -> None:
-        """Test Gemini API connection."""
-        api_key = self.api_key_var.get().strip()
-        
-        if not api_key:
-            messagebox.showwarning("No API Key", "Please enter an API key first.")
+        """Test selected API key connection."""
+        selection = self.keys_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select an API key to test.")
             return
+        
+        index = selection[0]
+        
+        # Get the actual key
+        if hasattr(self, 'temp_keys'):
+            keys = self.temp_keys
+        else:
+            keys = self.config.get_all_api_keys()
+        
+        if index >= len(keys):
+            messagebox.showerror("Error", "Invalid key selection.")
+            return
+        
+        api_key = keys[index]
         
         try:
             from google import genai
@@ -203,9 +326,9 @@ class SettingsWindow:
                 model="gemini-3-flash-preview",
                 contents="Hello"
             )
-            messagebox.showinfo("Success", "API connection successful!")
+            messagebox.showinfo("Success", f"API key #{index + 1} works correctly!")
         except Exception as e:
-            messagebox.showerror("Error", f"API test failed:\n{str(e)}")
+            messagebox.showerror("Error", f"API test failed:\n{str(e)[:100]}")
     
     def _test_capture(self) -> None:
         """Test screenshot capture."""
@@ -216,10 +339,16 @@ class SettingsWindow:
     def _save_settings(self) -> None:
         """Save settings to configuration."""
         try:
-            # Update configuration
+            # Save API keys
+            if hasattr(self, 'temp_keys'):
+                # Clear old keys and add new ones
+                old_keys = self.config.get_all_api_keys()
+                self.config.set('gemini.api_keys', self.temp_keys)
+            
+            # Update other configuration
             self.config.set('hotkey', self.hotkey_var.get().strip())
-            self.config.set('gemini.api_key', self.api_key_var.get().strip())
             self.config.set('gemini.system_prompt', self.prompt_text.get('1.0', tk.END).strip())
+            self.config.set('gemini.auto_rotate_on_quota_error', self.auto_rotate_var.get())
             self.config.set('auto_paste.enabled', self.auto_paste_var.get())
             self.config.set('auto_paste.restore_clipboard', self.restore_clipboard_var.get())
             self.config.set('auto_paste.delay_ms', self.delay_var.get())

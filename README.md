@@ -7,6 +7,7 @@ A Windows system tray application that captures screenshots via global hotkeys, 
 - 🔥 **Global Hotkey**: Trigger screenshot capture with a customizable key combination (default: `Ctrl+Shift+Alt+A`)
 - 📸 **Silent Screenshot**: Captures screen without switching windows or interrupting workflow
 - 🤖 **Gemini AI Integration**: Uses Gemini 3 Flash, the latest generation model with PhD-level reasoning
+- 🔄 **API Key Rotation**: Automatically switches between multiple API keys when quota is exceeded
 - 📋 **Auto-Paste**: Automatically pastes AI response at cursor position
 - 🎯 **System Tray**: Always-running background service with easy enable/disable
 - ⚙️ **Configurable**: Full settings UI for customization

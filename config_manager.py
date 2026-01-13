@@ -83,7 +83,9 @@ class ConfigManager:
         return {
             "hotkey": "ctrl+shift+alt+a",
             "gemini": {
-                "api_key": "",
+                "api_keys": [],
+                "current_key_index": 0,
+                "auto_rotate_on_quota_error": True,
                 "model": "gemini-3-flash-preview",
                 "system_prompt": "You are a helpful assistant. Analyze this screenshot and provide a concise solution. Be direct and actionable."
             },
@@ -114,8 +116,65 @@ class ConfigManager:
         return self.get('gemini.system_prompt', '')
     
     def get_api_key(self) -> str:
-        """Get Gemini API key."""
-        return self.get('gemini.api_key', '')
+        """Get current active API key."""
+        keys = self.get('gemini.api_keys', [])
+        if not keys:
+            return ''
+        index = self.get('gemini.current_key_index', 0)
+        if index >= len(keys):
+            index = 0
+            self.set('gemini.current_key_index', 0)
+        return keys[index]
+    
+    def get_all_api_keys(self) -> list:
+        """Get all configured API keys."""
+        return self.get('gemini.api_keys', [])
+    
+    def add_api_key(self, api_key: str) -> None:
+        """Add a new API key to the rotation list.
+        
+        Args:
+            api_key: API key to add
+        """
+        keys = self.get_all_api_keys()
+        if api_key and api_key not in keys:
+            keys.append(api_key)
+            self.set('gemini.api_keys', keys)
+    
+    def remove_api_key(self, api_key: str) -> None:
+        """Remove an API key from the rotation list.
+        
+        Args:
+            api_key: API key to remove
+        """
+        keys = self.get_all_api_keys()
+        if api_key in keys:
+            keys.remove(api_key)
+            self.set('gemini.api_keys', keys)
+            # Reset index if needed
+            current_index = self.get('gemini.current_key_index', 0)
+            if current_index >= len(keys):
+                self.set('gemini.current_key_index', 0)
+    
+    def rotate_to_next_key(self) -> str:
+        """Rotate to the next API key in the list.
+        
+        Returns:
+            The new current API key
+        """
+        keys = self.get_all_api_keys()
+        if len(keys) <= 1:
+            return self.get_api_key()
+        
+        current_index = self.get('gemini.current_key_index', 0)
+        next_index = (current_index + 1) % len(keys)
+        self.set('gemini.current_key_index', next_index)
+        
+        return keys[next_index]
+    
+    def is_auto_rotate_enabled(self) -> bool:
+        """Check if automatic rotation on quota error is enabled."""
+        return self.get('gemini.auto_rotate_on_quota_error', True)
     
     def is_auto_paste_enabled(self) -> bool:
         """Check if auto-paste is enabled."""
