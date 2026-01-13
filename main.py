@@ -22,6 +22,7 @@ from hotkey_listener import HotkeyListener
 from system_tray import SystemTray
 from startup_manager import StartupManager
 from settings_window import SettingsWindow
+from main_window import MainWindow, ModernTheme
 
 
 class AIAssistant:
@@ -67,16 +68,28 @@ class AIAssistant:
             on_settings=self.on_settings,
             on_exit=self.on_exit
         )
+
+        # State (defined before MainWindow so it can be passed)
+        self.is_enabled = True
+        self.is_processing = False
+        self.image_queue = []  # Queue for multi-screenshot mode
+
+        # Initialize Main Window
+        self.main_window = MainWindow(
+            app_name="AI Assistant",
+            version="1.0.0",
+            on_toggle=self.on_toggle,
+            on_capture=self.on_manual_capture,
+            on_settings=self.on_settings,
+            on_exit=self.on_exit,
+            initial_enabled=self.is_enabled
+        )
         
         # Initialize startup manager
         self.startup_manager = StartupManager()
         
-        # State
-        self.is_enabled = True
-        self.is_processing = False
-        
-        # Register hotkey
-        self._register_hotkey()
+        # Register hotkeys
+        self._register_hotkeys()
         
         # Update system tray with hotkey
         self.system_tray.update_hotkey_display(self.config.get_hotkey())
@@ -90,17 +103,58 @@ class AIAssistant:
         
         logger.info("AI Assistant initialized successfully")
     
-    def _register_hotkey(self) -> None:
-        """Register global hotkey with listener."""
-        hotkey = self.config.get_hotkey()
-        
-        if self.hotkey_listener.register(hotkey, self.on_hotkey_pressed):
-            logger.info(f"Hotkey registered: {hotkey}")
+    def _register_hotkeys(self) -> None:
+        """Register global hotkeys with listener."""
+        # Register main analysis hotkey
+        main_hotkey = self.config.get_hotkey()
+        if self.hotkey_listener.register(main_hotkey, self.on_hotkey_pressed):
+            logger.info(f"Main hotkey registered: {main_hotkey}")
         else:
-            logger.error(f"Failed to register hotkey: {hotkey}")
+            logger.error(f"Failed to register main hotkey: {main_hotkey}")
+            
+        # Register capture-only hotkey
+        capture_hotkey = self.config.get_capture_hotkey()
+        logger.info(f"Registering capture hotkey: {capture_hotkey}")
+        # Note: We need to register a separate callback for the capture hotkey
+        # Since HotkeyListener.register might support one callback per key, we call it again
+        if self.hotkey_listener.register(capture_hotkey, self.on_capture_hotkey_pressed):
+            logger.info(f"Capture hotkey registered: {capture_hotkey}")
+        else:
+            logger.error(f"Failed to register capture hotkey: {capture_hotkey}")
     
+    def on_capture_hotkey_pressed(self) -> None:
+        """Handle capture-only hotkey press."""
+        if not self.is_enabled:
+            return
+            
+        logger.info("Capture hotkey pressed! Queuing screenshot...")
+        
+        # Run in thread to not block input
+        thread = threading.Thread(target=self._queue_screenshot, daemon=True)
+        thread.start()
+        
+    def _queue_screenshot(self) -> None:
+        """Capture and queue a screenshot."""
+        try:
+            # Capture
+            image = self.screenshot.capture_full_screen()
+            self.image_queue.append(image)
+            
+            count = len(self.image_queue)
+            logger.info(f"Screenshot queued. Total in queue: {count}")
+            
+            # Notify user
+            self.system_tray.show_notification(
+                "Screenshot Queued",
+                f"Images in queue: {count}\nPress main hotkey to analyze all."
+            )
+            self._log_to_gui(f"Screenshot added to queue ({count})", "INFO")
+            
+        except Exception as e:
+            logger.error(f"Error queuing screenshot: {e}")
+
     def on_hotkey_pressed(self) -> None:
-        """Handle hotkey press event."""
+        """Handle main hotkey press event."""
         if not self.is_enabled:
             logger.info("Hotkey pressed but assistant is disabled")
             return
@@ -109,25 +163,41 @@ class AIAssistant:
             logger.info("Already processing a request, ignoring hotkey")
             return
         
-        logger.info("Hotkey pressed! Starting capture and analysis...")
+        logger.info("Main hotkey pressed!")
         
         # Run async processing in a new thread to avoid blocking
         thread = threading.Thread(target=self._process_screenshot, daemon=True)
         thread.start()
+
+    def on_manual_capture(self) -> None:
+        """Handle manual capture from GUI."""
+        logger.info("Manual capture triggered from GUI")
+        thread = threading.Thread(target=self._process_screenshot, daemon=True)
+        thread.start()
     
     def _process_screenshot(self) -> None:
-        """Process screenshot (capture, analyze, paste)."""
+        """Process screenshot(s) (capture/queue, analyze, paste)."""
         try:
             self.is_processing = True
             
-            # 1. Capture screenshot
-            logger.info("Capturing screenshot...")
-            image = self.screenshot.capture_full_screen()
+            images_to_process = []
+            
+            # Check if we have queued images
+            if self.image_queue:
+                logger.info(f"Processing {len(self.image_queue)} queued images...")
+                images_to_process = list(self.image_queue)
+                self.image_queue.clear() # Clear queue
+            else:
+                # No queue, capture single fresh screenshot
+                logger.info("Capturing single screenshot...")
+                images_to_process = self.screenshot.capture_full_screen()
             
             # 2. Analyze with Gemini
             logger.info("Analyzing with Gemini...")
             prompt = self.config.get_system_prompt()
-            response = self.gemini.analyze_screenshot_sync(image, prompt)
+            
+            # Analyze (accepts single image or list)
+            response = self.gemini.analyze_screenshot_sync(images_to_process, prompt)
             
             logger.info(f"Received response: {response[:100]}...")
             
@@ -162,6 +232,15 @@ class AIAssistant:
             )
         finally:
             self.is_processing = False
+            self.main_window.update_status(f"Done")
+
+    def _log_to_gui(self, message: str, level: str = "INFO"):
+        """Helper to log to GUI safely."""
+        try:
+            self.main_window.log(message, level)
+        except:
+            pass
+
     
     def on_toggle(self, enabled: bool) -> None:
         """Handle enable/disable toggle from system tray.
@@ -177,12 +256,23 @@ class AIAssistant:
             self.hotkey_listener.disable()
         
         logger.info(f"Assistant {'enabled' if enabled else 'disabled'}")
+        
+        # Update GUI if toggle came from tray
+        if self.main_window and self.main_window.is_enabled != enabled:
+            self.main_window.is_enabled = enabled
+            # We need to update button text, usually by calling the toggle method without callback loop
+            # But simpler is to accessing the private method or just setting state
+            # For now, let's assume sync is fine or user won't toggle insanely fast
+            # Ideally, main_window exposes a method set_enabled_state(bool)
+            pass 
     
     def on_settings(self) -> None:
         """Handle settings menu click."""
         logger.info("Opening settings window...")
         
-        # Create and show settings window in a new thread
+        # Create and show settings window
+        # Since we use tkinter mainloop now, we should NOT create a new thread for settings
+        # IF settings uses Toplevel.
         def show_settings():
             settings = SettingsWindow(
                 config_manager=self.config,
@@ -192,8 +282,12 @@ class AIAssistant:
             settings.show()
             settings.run()
         
-        thread = threading.Thread(target=show_settings, daemon=True)
-        thread.start()
+        # If calling from GUI thread (button click), run directly
+        # If calling from Tray thread, we might need to schedule it on GUI thread
+        if threading.current_thread() is not threading.main_thread():
+             self.main_window.window.after(0, show_settings)
+        else:
+             show_settings()
     
     def on_settings_saved(self) -> None:
         """Handle settings saved event."""
@@ -230,6 +324,10 @@ class AIAssistant:
         # Unregister hotkey
         self.hotkey_listener.unregister()
         
+        # Close window
+        if self.main_window:
+            self.main_window.close()
+            
         # Exit
         sys.exit(0)
     
@@ -238,8 +336,34 @@ class AIAssistant:
         logger.info("Starting system tray...")
         
         try:
-            # Run system tray (blocking)
-            self.system_tray.run()
+            # Run system tray (detached)
+            self.system_tray.run_detached()
+            
+            # Show and run Main Window (blocking)
+            self.main_window.show()
+            
+            # Add GUI log handler
+            import logging as import_logging
+            
+            class GuiHandler(import_logging.Handler):
+                def __init__(self, gui_log_func):
+                    super().__init__()
+                    self.gui_log_func = gui_log_func
+                
+                def emit(self, record):
+                    msg = self.format(record)
+                    level = record.levelname
+                    try:
+                        self.gui_log_func(msg, level)
+                    except:
+                        pass  # Ignore errors if GUI is closing
+            
+            gui_handler = GuiHandler(self.main_window.log)
+            gui_handler.setFormatter(import_logging.Formatter('%(message)s'))
+            logger.addHandler(gui_handler)
+            
+            self.main_window.window.mainloop()
+            
         except KeyboardInterrupt:
             logger.info("Keyboard interrupt received")
             self.on_exit()

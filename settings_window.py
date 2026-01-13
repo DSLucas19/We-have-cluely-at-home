@@ -5,7 +5,7 @@ from typing import Callable, Optional
 from logger import logger
 
 
-class Settings Window:
+class SettingsWindow:
     """GUI window for application settings including multiple API keys."""
     
     def __init__(
@@ -40,7 +40,12 @@ class Settings Window:
     
     def _create_window(self) -> None:
         """Create and configure the settings window."""
-        self.window = tk.Tk()
+        # Check if root already exists
+        if tk._default_root:
+            self.window = tk.Toplevel()
+        else:
+            self.window = tk.Tk()
+            
         self.window.title("AI Assistant Settings")
         self.window.geometry("550x700")
         self.window.resizable(False, False)
@@ -57,7 +62,8 @@ class Settings Window:
         )
         row += 1
         
-        ttk.Label(main_frame, text="Hotkey:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        # Main Hotkey
+        ttk.Label(main_frame, text="Main Hotkey:").grid(row=row, column=0, sticky=tk.W, pady=5)
         
         hotkey_frame = ttk.Frame(main_frame)
         hotkey_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
@@ -66,8 +72,19 @@ class Settings Window:
         self.hotkey_entry = ttk.Entry(hotkey_frame, textvariable=self.hotkey_var, width=25)
         self.hotkey_entry.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.record_btn = ttk.Button(hotkey_frame, text="Record", command=self._record_hotkey)
-        self.record_btn.pack(side=tk.LEFT)
+        row += 1
+        
+        # Capture Hotkey
+        ttk.Label(main_frame, text="Capture Queue Hotkey:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        
+        capture_hotkey_frame = ttk.Frame(main_frame)
+        capture_hotkey_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        self.capture_hotkey_var = tk.StringVar(value=self.config.get_capture_hotkey())
+        self.capture_hotkey_entry = ttk.Entry(capture_hotkey_frame, textvariable=self.capture_hotkey_var, width=25)
+        self.capture_hotkey_entry.pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Label(capture_hotkey_frame, text="(For multi-image)", font=('', 8), foreground='gray').pack(side=tk.LEFT)
         
         row += 1
         
@@ -347,6 +364,7 @@ class Settings Window:
             
             # Update other configuration
             self.config.set('hotkey', self.hotkey_var.get().strip())
+            self.config.set('capture_hotkey', self.capture_hotkey_var.get().strip())
             self.config.set('gemini.system_prompt', self.prompt_text.get('1.0', tk.END).strip())
             self.config.set('gemini.auto_rotate_on_quota_error', self.auto_rotate_var.get())
             self.config.set('auto_paste.enabled', self.auto_paste_var.get())
@@ -375,6 +393,11 @@ class Settings Window:
             logger.info("Settings window closed")
     
     def run(self) -> None:
-        """Run the settings window (blocking)."""
+        """Run the settings window (blocking if it's the root)."""
         if self.window:
-            self.window.mainloop()
+            # Only run mainloop if this is the root window and not Toplevel
+            if isinstance(self.window, tk.Tk):
+                self.window.mainloop()
+            else:
+                self.window.grab_set()  # Make modal
+                self.window.wait_window()

@@ -100,14 +100,14 @@ class GeminiIntegration:
     
     async def analyze_screenshot(
         self,
-        image: Image.Image,
+        images: list[Image.Image] | Image.Image,
         prompt: str = "Analyze this screenshot and provide a solution.",
         retry_count: int = 0
     ) -> str:
-        """Send screenshot to Gemini for analysis (async) with auto-rotation.
+        """Send screenshot(s) to Gemini for analysis (async) with auto-rotation.
         
         Args:
-            image: PIL Image object
+            images: Single PIL Image or list of PIL Images
             prompt: Custom prompt for analysis
             retry_count: Internal retry counter
             
@@ -120,12 +120,20 @@ class GeminiIntegration:
             return error_msg
         
         try:
-            logger.info("Sending screenshot to Gemini (async)...")
+            logger.info("Sending screenshot(s) to Gemini (async)...")
             
-            # Pass PIL Image directly - SDK handles conversion
+            # Prepare contents
+            contents = [prompt]
+            if isinstance(images, list):
+                contents.extend(images)
+                logger.info(f"Attached {len(images)} images to request")
+            else:
+                contents.append(images)
+            
+            # SDK handles image conversion automatically
             response = await self.client.aio.models.generate_content(
                 model=self.model_name,
-                contents=[prompt, image]
+                contents=contents
             )
             
             result_text = response.text
@@ -140,7 +148,7 @@ class GeminiIntegration:
                 
                 if self._try_rotate_key():
                     logger.info("Retrying with rotated API key...")
-                    return await self.analyze_screenshot(image, prompt, retry_count + 1)
+                    return await self.analyze_screenshot(images, prompt, retry_count + 1)
             
             error_msg = f"Error analyzing screenshot: {str(e)}"
             logger.error(error_msg)
@@ -148,14 +156,14 @@ class GeminiIntegration:
     
     def analyze_screenshot_sync(
         self,
-        image: Image.Image,
+        images: list[Image.Image] | Image.Image,
         prompt: str = "Analyze this screenshot and provide a solution.",
         retry_count: int = 0
     ) -> str:
         """Synchronous version of analyze_screenshot with auto-rotation.
         
         Args:
-            image: PIL Image object
+            images: Single PIL Image or list of PIL Images
             prompt: Custom prompt for analysis
             retry_count: Internal retry counter
             
@@ -168,12 +176,20 @@ class GeminiIntegration:
             return error_msg
         
         try:
-            logger.info("Sending screenshot to Gemini (sync)...")
+            logger.info("Sending screenshot(s) to Gemini (sync)...")
             
-            # Pass PIL Image directly - SDK handles conversion
+            # Prepare contents
+            contents = [prompt]
+            if isinstance(images, list):
+                contents.extend(images)
+                logger.info(f"Attached {len(images)} images to request")
+            else:
+                contents.append(images)
+            
+            # SDK handles image conversion automatically
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=[prompt, image]
+                contents=contents
             )
             
             result_text = response.text
@@ -188,7 +204,7 @@ class GeminiIntegration:
                 
                 if self._try_rotate_key():
                     logger.info("Retrying with rotated API key...")
-                    return self.analyze_screenshot_sync(image, prompt, retry_count + 1)
+                    return self.analyze_screenshot_sync(images, prompt, retry_count + 1)
             
             error_msg = f"Error analyzing screenshot: {str(e)}"
             logger.error(error_msg)

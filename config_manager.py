@@ -25,7 +25,7 @@ class ConfigManager:
                 self.config = json.load(f)
         else:
             # Create default configuration
-            self.config = self._get_defaults()
+            self.config = self.get_defaults()
             self.save()
     
     def save(self) -> None:
@@ -74,14 +74,15 @@ class ConfigManager:
         config[keys[-1]] = value
         self.save()
     
-    def _get_defaults(self) -> Dict[str, Any]:
+    def get_defaults(self) -> Dict[str, Any]:
         """Get default configuration.
         
         Returns:
             Default configuration dictionary
         """
         return {
-            "hotkey": "ctrl+shift+alt+a",
+            "hotkey": "ctrl+shift+alt+a",         # Main analysis hotkey
+            "capture_hotkey": "ctrl+shift+alt+c", # New: Capture-only hotkey
             "gemini": {
                 "api_keys": [],
                 "current_key_index": 0,
@@ -108,8 +109,12 @@ class ConfigManager:
         }
     
     def get_hotkey(self) -> str:
-        """Get configured hotkey combination."""
+        """Get configured main analysis hotkey."""
         return self.get('hotkey', 'ctrl+shift+alt+a')
+    
+    def get_capture_hotkey(self) -> str:
+        """Get configured capture-only hotkey."""
+        return self.get('capture_hotkey', 'ctrl+shift+alt+c')
     
     def get_system_prompt(self) -> str:
         """Get AI system prompt."""
