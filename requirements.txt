@@ -1,0 +1,7 @@
+pystray==0.19.5
+keyboard==0.13.5
+mss==9.0.1
+pillow>=11.0.0
+google-genai
+pyautogui==0.9.54
+pyperclip==1.8.2
