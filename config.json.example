@@ -2,7 +2,9 @@
   "hotkey": "ctrl+shift+alt+a",
   "gemini": {
     "api_keys": [
-      "YOUR_API_KEY1"
+      "YOUR_API_KEY1",
+      "YOUR_API_KEY2",
+      "YOUR_API_KEY3"
     ],
     "current_key_index": 0,
     "auto_rotate_on_quota_error": true,
