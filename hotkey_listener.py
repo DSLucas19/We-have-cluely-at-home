@@ -9,31 +9,45 @@ class HotkeyListener:
     
     def __init__(self):
         """Initialize hotkey listener."""
+        # Use dictionary to support multiple hotkeys
+        self.registered_hotkeys: dict[str, Callable] = {}
+        self.is_enabled = False
+        
+        # Backward compatibility: track "main" hotkey
         self.current_hotkey: Optional[str] = None
         self.callback: Optional[Callable] = None
-        self.is_enabled = False
     
-    def register(self, hotkey: str, callback: Callable) -> bool:
+    def register(self, hotkey: str, callback: Callable, replace: bool = False) -> bool:
         """Register a global hotkey.
         
         Args:
             hotkey: Hotkey combination (e.g., 'ctrl+shift+alt+a')
             callback: Function to call when hotkey is pressed
+            replace: If True, unregister all previous hotkeys (legacy behavior)
             
         Returns:
             True if registration successful, False otherwise
         """
         try:
-            # Unregister previous hotkey if exists
-            if self.current_hotkey:
+            # Legacy mode: unregister all previous hotkeys
+            if replace and self.registered_hotkeys:
                 self.unregister()
+            
+            # Check if this specific hotkey is already registered
+            if hotkey in self.registered_hotkeys:
+                logger.warning(f"Hotkey '{hotkey}' already registered, replacing callback")
+                keyboard.remove_hotkey(hotkey)
             
             # Register new hotkey
             keyboard.add_hotkey(hotkey, callback, suppress=False)
             
+            # Store in dictionary
+            self.registered_hotkeys[hotkey] = callback
+            self.is_enabled = True
+            
+            # Backward compatibility: track as current hotkey
             self.current_hotkey = hotkey
             self.callback = callback
-            self.is_enabled = True
             
             logger.info(f"Hotkey registered: {hotkey}")
             return True
@@ -42,40 +56,71 @@ class HotkeyListener:
             logger.error(f"Failed to register hotkey '{hotkey}': {e}")
             return False
     
-    def unregister(self) -> None:
-        """Unregister current hotkey."""
-        if self.current_hotkey:
+    def unregister_hotkey(self, hotkey: str) -> None:
+        """Unregister a specific hotkey.
+        
+        Args:
+            hotkey: Hotkey combination to unregister
+        """
+        if hotkey in self.registered_hotkeys:
             try:
-                keyboard.remove_hotkey(self.current_hotkey)
-                logger.info(f"Hotkey unregistered: {self.current_hotkey}")
+                keyboard.remove_hotkey(hotkey)
+                del self.registered_hotkeys[hotkey]
+                logger.info(f"Hotkey unregistered: {hotkey}")
+                
+                # Update current_hotkey if it was this one
+                if self.current_hotkey == hotkey:
+                    self.current_hotkey = None
+                    self.callback = None
+                    
             except Exception as e:
-                logger.warning(f"Error unregistering hotkey: {e}")
-            
-            self.current_hotkey = None
-            self.callback = None
-            self.is_enabled = False
+                logger.warning(f"Error unregistering hotkey '{hotkey}': {e}")
+    
+    def unregister(self) -> None:
+        """Unregister all hotkeys."""
+        for hotkey in list(self.registered_hotkeys.keys()):
+            try:
+                keyboard.remove_hotkey(hotkey)
+                logger.info(f"Hotkey unregistered: {hotkey}")
+            except Exception as e:
+                logger.warning(f"Error unregistering hotkey '{hotkey}': {e}")
+        
+        self.registered_hotkeys.clear()
+        self.current_hotkey = None
+        self.callback = None
+        self.is_enabled = False
     
     def enable(self) -> bool:
-        """Enable hotkey (re-register with same callback)."""
-        if not self.current_hotkey or not self.callback:
-            logger.warning("Cannot enable: no hotkey registered")
+        """Enable all registered hotkeys (re-register with same callbacks)."""
+        if not self.registered_hotkeys:
+            logger.warning("Cannot enable: no hotkeys registered")
             return False
         
         if self.is_enabled:
-            logger.info("Hotkey already enabled")
+            logger.info("Hotkeys already enabled")
             return True
         
-        return self.register(self.current_hotkey, self.callback)
+        # Re-register all hotkeys
+        success = True
+        hotkeys_snapshot = dict(self.registered_hotkeys)  # Copy to avoid modification during iteration
+        self.registered_hotkeys.clear()
+        
+        for hotkey, callback in hotkeys_snapshot.items():
+            if not self.register(hotkey, callback):
+                success = False
+        
+        return success
     
     def disable(self) -> None:
-        """Disable hotkey temporarily (without unregistering)."""
-        if self.current_hotkey:
+        """Disable all hotkeys temporarily (without unregistering)."""
+        for hotkey in self.registered_hotkeys.keys():
             try:
-                keyboard.remove_hotkey(self.current_hotkey)
-                self.is_enabled = False
-                logger.info("Hotkey disabled")
+                keyboard.remove_hotkey(hotkey)
             except Exception as e:
-                logger.warning(f"Error disabling hotkey: {e}")
+                logger.warning(f"Error disabling hotkey '{hotkey}': {e}")
+        
+        self.is_enabled = False
+        logger.info("All hotkeys disabled")
     
     def is_hotkey_valid(self, hotkey: str) -> bool:
         """Check if hotkey string is valid.

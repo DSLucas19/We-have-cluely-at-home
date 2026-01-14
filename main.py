@@ -112,15 +112,16 @@ class AIAssistant:
         else:
             logger.error(f"Failed to register main hotkey: {main_hotkey}")
             
-        # Register capture-only hotkey
+        # Register capture-only hotkey (without replacing the main one)
         capture_hotkey = self.config.get_capture_hotkey()
-        logger.info(f"Registering capture hotkey: {capture_hotkey}")
-        # Note: We need to register a separate callback for the capture hotkey
-        # Since HotkeyListener.register might support one callback per key, we call it again
-        if self.hotkey_listener.register(capture_hotkey, self.on_capture_hotkey_pressed):
+        logger.info(f"Registering capture hotkey: {capture_hotkey}...")
+        if self.hotkey_listener.register(capture_hotkey, self.on_capture_hotkey_pressed, replace=False):
             logger.info(f"Capture hotkey registered: {capture_hotkey}")
         else:
             logger.error(f"Failed to register capture hotkey: {capture_hotkey}")
+        
+        # Log all registered hotkeys
+        logger.info(f"Total hotkeys registered: {len(self.hotkey_listener.registered_hotkeys)}")
     
     def on_capture_hotkey_pressed(self) -> None:
         """Handle capture-only hotkey press."""
